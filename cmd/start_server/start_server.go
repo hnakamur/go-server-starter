@@ -32,7 +32,7 @@ type options struct {
 	OptKillOldDelay        int      `long:"kill-old-delay" arg:"seconds" description:"time to suspend to send a signal to the old worker. The default value is\n5 when \"--enable-auto-restart\" is set, 0 otherwise. This can be\noverwritten by environment variable \"KILL_OLD_DELAY\"."`
 	OptRestart             bool     `long:"restart" description:"this is a wrapper command that reads the pid of the start_server process\nfrom --pid-file, sends SIGHUP to the process and waits until the\nserver(s) of the older generation(s) die by monitoring the contents of\nthe --status-file" note:"unimplemented"`
 	OptHelp                bool     `long:"help" description:"prints this help"`
-	OptVersion             bool     `long:"version" description:"printes the version number"`
+	OptVersion             bool     `long:"version" description:"prints the version number"`
 	OptDaemon              bool     `long:"daemon" description:"if set, run start_server as a daemon"`
 	OptSyslog              bool     `long:"syslog" description:"if set, prints log to syslog instead of stderr"`
 	OptSyslogPriority      string   `long:"syslog-priority" arg:"priority" description:"syslog priority. Specify one severity with one or more facilities\n(default: INFO,USER).\nPossible values are those on https://golang.org/pkg/log/syslog/#Priority\nwithout \"LOG_\" prefix."`
