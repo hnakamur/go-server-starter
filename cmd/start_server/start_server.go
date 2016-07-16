@@ -9,6 +9,7 @@ import (
 
 	"github.com/jessevdk/go-flags"
 	"github.com/lestrrat/go-server-starter"
+	daemon "github.com/lomik/go-daemon"
 )
 
 const version = "0.0.2"
@@ -31,6 +32,7 @@ type options struct {
 	OptRestart             bool     `long:"restart" description:"this is a wrapper command that reads the pid of the start_server process\nfrom --pid-file, sends SIGHUP to the process and waits until the\nserver(s) of the older generation(s) die by monitoring the contents of\nthe --status-file" note:"unimplemented"`
 	OptHelp                bool     `long:"help" description:"prints this help"`
 	OptVersion             bool     `long:"version" description:"printes the version number"`
+	OptDaemon              bool     `long:"daemon" description:"run start_server as a daemon"`
 }
 
 func (o options) Args() []string          { return o.OptArgs }
@@ -79,6 +81,7 @@ Options:
 		"OptRestart",
 		"OptHelp",
 		"OptVersion",
+		"OptDaemon",
 	}
 
 	for _, name := range names {
@@ -108,6 +111,25 @@ Options:
 	}
 }
 
+func childMain(args []string, opts *options) (st int) {
+	opts.OptCommand = args[0]
+	if len(args) > 1 {
+		opts.OptArgs = args[1:]
+	}
+
+	if opts.OptEnvdir != "" {
+		os.Setenv("ENVDIR", opts.OptEnvdir)
+	}
+
+	s, err := starter.NewStarter(opts)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %s\n", err)
+		return 1
+	}
+	s.Run()
+	return 0
+}
+
 func main() {
 	opts := &options{OptInterval: -1}
 	p := flags.NewParser(opts, flags.PrintErrors|flags.PassDoubleDash)
@@ -131,20 +153,21 @@ func main() {
 		os.Exit(1)
 	}
 
-	opts.OptCommand = args[0]
-	if len(args) > 1 {
-		opts.OptArgs = args[1:]
+	if opts.OptDaemon {
+		ctx := new(daemon.Context)
+		child, err := ctx.Reborn()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %s\n", err)
+			os.Exit(1)
+		}
+		if child != nil {
+			os.Exit(0)
+		} else {
+			st := childMain(args, opts)
+			ctx.Release()
+			os.Exit(st)
+		}
+	} else {
+		os.Exit(childMain(args, opts))
 	}
-
-	if opts.OptEnvdir != "" {
-		os.Setenv("ENVDIR", opts.OptEnvdir)
-	}
-
-	s, err := starter.NewStarter(opts)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %s\n", err)
-		os.Exit(1)
-	}
-	s.Run()
-	os.Exit(0)
 }
