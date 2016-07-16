@@ -109,24 +109,17 @@ Options:
 }
 
 func main() {
-	os.Exit(_main())
-}
-
-func _main() (st int) {
-	st = 1
-
 	opts := &options{OptInterval: -1}
 	p := flags.NewParser(opts, flags.PrintErrors|flags.PassDoubleDash)
 	args, err := p.Parse()
 	if err != nil || opts.OptHelp {
 		showHelp()
-		return
+		os.Exit(1)
 	}
 
 	if opts.OptVersion {
 		fmt.Printf("%s\n", version)
-		st = 0
-		return
+		os.Exit(0)
 	}
 
 	if opts.OptInterval < 0 {
@@ -135,7 +128,7 @@ func _main() (st int) {
 
 	if len(args) == 0 {
 		fmt.Fprintf(os.Stderr, "server program not specified\n")
-		return
+		os.Exit(1)
 	}
 
 	opts.OptCommand = args[0]
@@ -150,9 +143,8 @@ func _main() (st int) {
 	s, err := starter.NewStarter(opts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %s\n", err)
-		return
+		os.Exit(1)
 	}
 	s.Run()
-	st = 0
-	return
+	os.Exit(0)
 }
