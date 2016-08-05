@@ -9,6 +9,8 @@ import (
 
 	"github.com/jessevdk/go-flags"
 	"github.com/lestrrat/go-server-starter"
+	"github.com/lestrrat/go-server-starter/logger"
+	daemon "github.com/lomik/go-daemon"
 )
 
 const version = "0.0.2"
@@ -30,7 +32,11 @@ type options struct {
 	OptKillOldDelay        int      `long:"kill-old-delay" arg:"seconds" description:"time to suspend to send a signal to the old worker. The default value is\n5 when \"--enable-auto-restart\" is set, 0 otherwise. This can be\noverwritten by environment variable \"KILL_OLD_DELAY\"."`
 	OptRestart             bool     `long:"restart" description:"this is a wrapper command that reads the pid of the start_server process\nfrom --pid-file, sends SIGHUP to the process and waits until the\nserver(s) of the older generation(s) die by monitoring the contents of\nthe --status-file" note:"unimplemented"`
 	OptHelp                bool     `long:"help" description:"prints this help"`
-	OptVersion             bool     `long:"version" description:"printes the version number"`
+	OptVersion             bool     `long:"version" description:"prints the version number"`
+	OptDaemon              bool     `long:"daemon" description:"if set, run start_server as a daemon"`
+	OptSyslog              bool     `long:"syslog" description:"if set, prints log to syslog instead of stderr"`
+	OptSyslogPriority      string   `long:"syslog-priority" arg:"priority" description:"syslog priority. Specify one severity with one or more facilities\n(default: INFO,USER).\nPossible values are those on https://golang.org/pkg/log/syslog/#Priority\nwithout \"LOG_\" prefix."`
+	logger                 logger.Logger
 }
 
 func (o options) Args() []string          { return o.OptArgs }
@@ -43,6 +49,7 @@ func (o options) Paths() []string         { return o.OptPaths }
 func (o options) SignalOnHUP() os.Signal  { return starter.SigFromName(o.OptSignalOnHUP) }
 func (o options) SignalOnTERM() os.Signal { return starter.SigFromName(o.OptSignalOnTERM) }
 func (o options) StatusFile() string      { return o.OptStatusFile }
+func (o options) Logger() logger.Logger   { return o.logger }
 
 func showHelp() {
 	// The ONLY reason we're not using go-flags' help option is
@@ -79,6 +86,9 @@ Options:
 		"OptRestart",
 		"OptHelp",
 		"OptVersion",
+		"OptDaemon",
+		"OptSyslog",
+		"OptSyslogPriority",
 	}
 
 	for _, name := range names {
@@ -108,36 +118,7 @@ Options:
 	}
 }
 
-func main() {
-	os.Exit(_main())
-}
-
-func _main() (st int) {
-	st = 1
-
-	opts := &options{OptInterval: -1}
-	p := flags.NewParser(opts, flags.PrintErrors|flags.PassDoubleDash)
-	args, err := p.Parse()
-	if err != nil || opts.OptHelp {
-		showHelp()
-		return
-	}
-
-	if opts.OptVersion {
-		fmt.Printf("%s\n", version)
-		st = 0
-		return
-	}
-
-	if opts.OptInterval < 0 {
-		opts.OptInterval = 1
-	}
-
-	if len(args) == 0 {
-		fmt.Fprintf(os.Stderr, "server program not specified\n")
-		return
-	}
-
+func childMain(args []string, opts *options) (st int) {
 	opts.OptCommand = args[0]
 	if len(args) > 1 {
 		opts.OptArgs = args[1:]
@@ -149,10 +130,65 @@ func _main() (st int) {
 
 	s, err := starter.NewStarter(opts)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %s\n", err)
-		return
+		opts.logger.Printf("error: %s", err)
+		return 1
 	}
 	s.Run()
-	st = 0
-	return
+	return 0
+}
+
+func main() {
+	opts := &options{
+		OptInterval:       -1,
+		OptSyslogPriority: "INFO,USER",
+	}
+	p := flags.NewParser(opts, flags.PrintErrors|flags.PassDoubleDash)
+	args, err := p.Parse()
+	if err != nil || opts.OptHelp {
+		showHelp()
+		os.Exit(1)
+	}
+
+	if opts.OptVersion {
+		fmt.Printf("%s\n", version)
+		os.Exit(0)
+	}
+
+	if opts.OptInterval < 0 {
+		opts.OptInterval = 1
+	}
+
+	if opts.OptSyslog {
+		l, err := logger.NewSyslog(opts.OptSyslogPriority)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %s\n", err)
+			os.Exit(1)
+		}
+		opts.logger = l
+	} else {
+		opts.logger = logger.NewStderr()
+	}
+
+	if len(args) == 0 {
+		opts.logger.Printf("server program not specified")
+		os.Exit(1)
+	}
+
+	if opts.OptDaemon {
+		ctx := new(daemon.Context)
+		child, err := ctx.Reborn()
+		if err != nil {
+			opts.logger.Printf("error: %s", err)
+			os.Exit(1)
+		}
+		if child != nil {
+			os.Exit(0)
+		} else {
+			st := childMain(args, opts)
+			ctx.Release()
+			os.Exit(st)
+		}
+	} else {
+		os.Exit(childMain(args, opts))
+	}
 }
